@@ -594,6 +594,166 @@ impl Term {
     pub fn with_context<'a>(&'a self, ctx: &'a Context) -> impl fmt::Display + 'a {
         DisplayWithContext { term: self, ctx }
     }
+
+    /// Return if has beta redex
+    pub fn has_beta_redex(&self) -> bool {
+        match self {
+            Var(_) => false,
+            Abs(term) => term.has_beta_redex(),
+            App(boxed) => {
+                let (ref t1, ref t2) = **boxed;
+                match t1 {
+                    Abs(_) => return true,
+                    _ => {}
+                }
+                t1.has_beta_redex() || t2.has_beta_redex()
+            }
+        }
+    }
+
+    /// Returns `true` if all variables in the term are bound by an abstraction at a depth less than `k`.
+    pub fn lcat(&self, k: usize) -> bool {
+        match self {
+            Var(i) => *i < k,              // Check if the variable index is less than k.
+            Abs(term) => term.lcat(k + 1), // Recursively check the body of the abstraction.
+            App(boxed) => {
+                let (ref t1, ref t2) = **boxed;
+                t1.lcat(k) && t2.lcat(k) // Both the function and argument must satisfy the condition.
+            }
+        }
+    }
+
+    /// Returns `true` if all variables in the term are bound by an abstraction at a depth less than `0`
+    pub fn lc(&self) -> bool {
+        self.lcat(0)
+    }
+
+    /// Returns the number of abstractions and applications in the term
+    pub fn fokker_size(&self) -> usize {
+        match self {
+            Var(_) => 0,
+            Abs(term) => 1 + term.fokker_size(),
+            App(boxed) => {
+                let (ref t1, ref t2) = **boxed;
+                1 + t1.fokker_size() + t2.fokker_size()
+            }
+        }
+    }
+
+    fn count_bvar(&self, goal: usize) -> usize {
+        match self {
+            Var(i) => {
+                if *i == goal {
+                    1
+                } else {
+                    0
+                }
+            }
+            Abs(term) => term.count_bvar(goal + 1),
+            App(boxed) => {
+                let (ref t1, ref t2) = **boxed;
+                t1.count_bvar(goal) + t2.count_bvar(goal)
+            }
+        }
+    }
+
+    /// Return if has eta redex
+    pub fn has_eta_redex(&self) -> bool {
+        match self {
+            Var(_) => false,
+            Abs(term) => match term.as_ref() {
+                App(boxed) => {
+                    let (ref t1, ref t2) = **boxed;
+                    if *t2 == Var(0) && t1.count_bvar(0) == 0 {
+                        true
+                    } else {
+                        term.has_eta_redex()
+                    }
+                }
+                _ => term.has_eta_redex(),
+            },
+            App(boxed) => {
+                let (ref t1, ref t2) = **boxed;
+                t1.has_eta_redex() || t2.has_eta_redex()
+            }
+        }
+    }
+
+    /// Returns a string representation of the term in Lean syntax.
+    pub fn print_lean(&self) -> String {
+        match self {
+            Var(i) => format!(".bvar {i}"),
+            Abs(term) => format!(".abs ({})", term.print_lean()),
+            App(term) => {
+                let (a, b) = term.as_ref();
+                format!(".app ({}) ({})", a.print_lean(), b.print_lean())
+            }
+        }
+    }
+
+    /// Returns a string representation of the term in a custom encoding format
+    pub fn encode(&self) -> String {
+        match self {
+            Var(i) => i.to_string(),
+            Abs(term) => format!("L{}", term.encode()),
+            App(ab) => {
+                let (a, b) = ab.as_ref();
+                format!("A{}{}", a.encode(), b.encode())
+            }
+        }
+    }
+
+    /// Returns `true` if all variables in the term are `Var(0)`, i.e. the term is structurally isomorphic to `UD`.
+    pub fn all0(&self) -> bool {
+        match self {
+            Var(0) => true,
+            Var(_) => false,
+            Abs(term) => term.all0(),
+            App(boxed) => {
+                let (ref t1, ref t2) = **boxed;
+                t1.all0() && t2.all0()
+            }
+        }
+    }
+
+    /// Returns `true` if no variable index occurs more than once in the term.
+    pub fn no_duplicate(&self) -> bool {
+        match self {
+            Var(_) => true,
+            Abs(term) => term.count_bvar(0) < 2 && term.no_duplicate(),
+            App(boxed) => {
+                let (ref t1, ref t2) = **boxed;
+                t1.no_duplicate() && t2.no_duplicate()
+            }
+        }
+    }
+
+    /// Returns `true` if every bound variable in the term is used.
+    pub fn every_bvar_used(&self) -> bool {
+        match self {
+            Var(_) => true,
+            Abs(term) => self.count_bvar(0) > 0 && term.every_bvar_used(),
+            App(boxed) => {
+                let (ref t1, ref t2) = **boxed;
+                t1.every_bvar_used() && t2.every_bvar_used()
+            }
+        }
+    }
+
+    /// Returns `true` if the term can be represented using only two distinct variable indices, i.e. `Var(1)` and `Var(2)`.
+    pub fn two_vars_are_enough(&self) -> bool {
+        match self {
+            Var(_) => true,
+            Abs(term) => match term.as_ref() {
+                Abs(term) => term.two_vars_are_enough(),
+                _ => false,
+            },
+            App(boxed) => {
+                let (ref t1, ref t2) = **boxed;
+                t1.two_vars_are_enough() && t2.two_vars_are_enough()
+            }
+        }
+    }
 }
 
 /// Wraps a `Term` in an `Abs`traction. Consumes its argument.
