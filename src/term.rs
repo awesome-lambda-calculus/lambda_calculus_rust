@@ -738,7 +738,7 @@ impl fmt::Debug for Term {
 
 fn show_precedence_dbr(term: &Term, context_precedence: usize) -> String {
     match term {
-        Var(0) => "undefined".to_owned(),
+        // Var(0) => "undefined".to_owned(),
         Var(i) => {
             format!("{:X}", i)
         }
