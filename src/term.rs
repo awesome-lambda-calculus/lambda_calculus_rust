@@ -703,6 +703,32 @@ impl Term {
         }
     }
 
+    /// Decodes a list of characters into a Term.
+    pub fn decode_fuel(chars: &[char]) -> Option<(Self, &[char])> {
+        // Attempt to split the head and tail of the character slice.
+        // If empty, returns None.
+        let (head, bs) = chars.split_first()?;
+
+        match head {
+            'L' => {
+                // The `?` operator acts exactly like the Lean `match ... with | some => ... | none => none`
+                let (t, rest) = Self::decode_fuel(bs)?;
+                Some((Term::Abs(Box::new(t)), rest))
+            }
+            'A' => {
+                let (t1, rest1) = Self::decode_fuel(bs)?;
+                let (t2, rest2) = Self::decode_fuel(rest1)?;
+                Some((Term::App(Box::new((t1, t2))), rest2))
+            }
+            c @ '0'..='9' => {
+                // Match bounds inclusively, then convert to a numeric value
+                let val = c.to_digit(10).unwrap();
+                Some((Term::Var(val.try_into().unwrap()), bs))
+            }
+            _ => None,
+        }
+    }
+
     /// Returns `true` if all variables in the term are `Var(0)`, i.e. the term is structurally isomorphic to `UD`.
     pub fn all0(&self) -> bool {
         match self {
