@@ -293,7 +293,13 @@ pub fn parse_with_context(
     let tokens = if notation == DeBruijn {
         tokenize_dbr(input)?
     } else {
-        convert_classic_tokens(ctx, &tokenize_cla(input)?)?
+        let mut tokens = convert_classic_tokens(ctx, &tokenize_cla(input)?)?;
+        for token in &mut tokens {
+            if let Number(i) = *token {
+                *token = Number(i - 1);
+            }
+        }
+        tokens
     };
     let ast = get_ast(&tokens)?;
 
