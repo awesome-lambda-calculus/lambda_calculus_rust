@@ -657,6 +657,32 @@ impl Term {
         }
     }
 
+    fn count_bvar_all(&self) -> usize {
+        match self {
+            Var(_) => 1,
+            Abs(term) => term.count_bvar_all(),
+            App(boxed) => {
+                let (ref t1, ref t2) = **boxed;
+                t1.count_bvar_all() + t2.count_bvar_all()
+            }
+        }
+    }
+
+    /// This is a decider
+    pub fn only_one_var_used(&self) -> bool {
+        match self {
+            Var(_) => true,
+            Abs(term) => {
+                (term.count_bvar(0) == term.count_bvar_all())
+                    || (term.count_bvar(0) == 0 && term.only_one_var_used())
+            }
+            App(boxed) => {
+                let (ref t1, ref t2) = **boxed;
+                t1.only_one_var_used() && t2.only_one_var_used()
+            }
+        }
+    }
+
     /// Return if has eta redex
     pub fn has_eta_redex(&self) -> bool {
         match self {
@@ -675,6 +701,56 @@ impl Term {
             App(boxed) => {
                 let (ref t1, ref t2) = **boxed;
                 t1.has_eta_redex() || t2.has_eta_redex()
+            }
+        }
+    }
+
+    /// Shifts free variables down by a given amount when a binder is removed.
+    fn shift(&mut self, amount: isize, depth: usize) {
+        match self {
+            Term::Var(v) => {
+                if *v >= depth {
+                    *v = (*v as isize + amount) as usize;
+                }
+            }
+            Term::Abs(inner) => inner.shift(amount, depth + 1),
+            Term::App(inner) => {
+                inner.0.shift(amount, depth);
+                inner.1.shift(amount, depth);
+            }
+        }
+    }
+
+    /// Reduces the term using eta reduction.
+    pub fn eta_reduce(self) -> Self {
+        match self {
+            Term::Var(_) => self,
+
+            Term::App(inner) => {
+                let (t1, t2) = *inner;
+                Term::App(Box::new((t1.eta_reduce(), t2.eta_reduce())))
+            }
+
+            Term::Abs(inner) => {
+                let reduced_inner = inner.eta_reduce();
+
+                if let Term::App(app_inner) = reduced_inner {
+                    let (mut m, arg) = *app_inner;
+
+                    // Match the pattern: Abs(App(M, Var(0)))
+                    if let Term::Var(0) = arg {
+                        // If the variable '0' appears 0 times in M, it is not free in M.
+                        if m.count_bvar(0) == 0 {
+                            // Strip the Abs binder and shift outer free variables down
+                            m.shift(-1, 0);
+                            return m.eta_reduce();
+                        }
+                    }
+                    // Reconstruct if reduction criteria aren't met
+                    Term::Abs(Box::new(Term::App(Box::new((m, arg)))))
+                } else {
+                    Term::Abs(Box::new(reduced_inner))
+                }
             }
         }
     }
@@ -1229,5 +1305,69 @@ mod tests {
             .has_free_variables()
         );
         assert!((Var(0)).has_free_variables());
+    }
+}
+
+#[cfg(test)]
+mod eta_reduce_tests {
+    use super::*;
+
+    #[test]
+    fn test_no_reduction_on_plain_var() {
+        // x
+        let term = Var(0);
+        assert_eq!(term.clone().eta_reduce(), term);
+    }
+
+    #[test]
+    fn test_identity_does_not_reduce() {
+        // \x. x -> Abs(Var(0))
+        // Cannot be eta-reduced because it's not an application
+        let term = abs(Var(0));
+        assert_eq!(term.clone().eta_reduce(), term);
+    }
+
+    #[test]
+    fn test_basic_eta_reduction() {
+        // \x. f x  =>  Abs(App(Var(1), Var(0)))
+        // Since `Var(1)` (which is `f`) doesn't contain `Var(0)`, this should reduce to `f`
+        // But remember: when the Abs disappears, Var(1) shifts down to Var(0)
+        let term = abs(app(Var(1), Var(0)));
+        let expected = Var(0);
+        assert_eq!(term.eta_reduce(), expected);
+    }
+
+    #[test]
+    fn test_no_reduction_if_variable_is_free_in_m() {
+        // \x. x x  =>  Abs(App(Var(0), Var(0)))
+        // Here, the body M is `Var(0)`. Because count_bvar(0) == 1, it cannot be eta-reduced.
+        let term = abs(app(Var(0), Var(0)));
+        assert_eq!(term.clone().eta_reduce(), term);
+    }
+
+    #[test]
+    fn test_nested_eta_reduction() {
+        // \x. \y. f x y  => \x. \y. ((Var(2) Var(1)) Var(0))
+        // Inner reduction: \y. (f x) y  => f x
+        // Outer reduction: \x. f x      => f
+        // Ultimately results in just `f`, shifted down properly to Var(0)
+        let term = abs(abs(app(app(Var(2), Var(1)), Var(0))));
+        let expected = Var(0);
+        assert_eq!(term.eta_reduce(), expected);
+    }
+
+    #[test]
+    fn test_complex_shifting() {
+        // \x. (\y. g y) x
+        // Inner term `\y. g y` can be eta-reduced to `g`
+        // Let's build: Abs(App( Abs(App(Var(2), Var(0))), Var(0) ))
+        // 1. Inner Abs reduces: Abs(App(Var(2), Var(0))) -> Var(1) (shifted)
+        // 2. Tree becomes: Abs(App(Var(1), Var(0)))
+        // 3. Outer Abs reduces: -> Var(0) (shifted again)
+        let inner_abs = abs(app(Term::Var(2), Var(0))); // \y. g y
+        let term = abs(app(inner_abs, Var(0))); // \x. (\y. g y) x
+
+        let expected = Var(0);
+        assert_eq!(term.eta_reduce(), expected);
     }
 }
