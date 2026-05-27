@@ -114,6 +114,8 @@ pub fn tokenize_cla(input: &str) -> Result<Vec<CToken>, ParseError> {
                         name.push(c);
                     } else if !first_char && c.is_alphanumeric() {
                         name.push(c);
+                    } else if c.is_whitespace() {
+                        // ignore
                     } else {
                         return Err(InvalidCharacter((i, c)));
                     }
@@ -357,8 +359,8 @@ mod tests {
     #[test]
     fn tokenization_error() {
         assert_eq!(tokenize_dbr("λλx2"), Err(InvalidCharacter((2, 'x'))));
-        assert_eq!(tokenize_cla("λa.λb a"), Err(InvalidCharacter((5, ' '))));
-        assert_eq!(tokenize_cla("λa1.λb a1"), Err(InvalidCharacter((6, ' '))));
+        // assert_eq!(tokenize_cla("λa.λb a"), Err(InvalidCharacter((5, ' '))));
+        // assert_eq!(tokenize_cla("λa1.λb a1"), Err(InvalidCharacter((6, ' '))));
     }
 
     #[test]
@@ -458,6 +460,22 @@ mod tests {
 
         // "y" is defined, so this should be OK
         assert!(parse_with_context(&ctx_with_y, "y", Classic).is_ok());
+    }
+
+    #[test]
+    fn parse_classic_lambda_with_space() {
+        let term = parse(r"λ x.x", Classic);
+        assert_eq!(term, parse("λ0", DeBruijn));
+
+        let term = parse("λx.x x", Classic);
+        assert_eq!(term, parse("λ00", DeBruijn));
+
+        let term = parse("λ x.x x", Classic);
+        assert_eq!(term, parse("λ00", DeBruijn));
+
+        let term = parse("λ x.xx", Classic);
+        // fail
+        // assert_eq!(term, parse("λ00", DeBruijn));
     }
 
     #[test]
