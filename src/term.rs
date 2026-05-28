@@ -1077,6 +1077,7 @@ macro_rules! abs {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parse;
 
     #[test]
     fn app_macro() {
@@ -1306,11 +1307,18 @@ mod tests {
         );
         assert!((Var(0)).has_free_variables());
     }
+
+    #[test]
+    fn test_has_eta_redex() {
+        // \x. f x has an eta redex
+        let term = parse("λλ(λ0)0(λ1)", DeBruijn).unwrap();
+        assert!(!term.has_eta_redex());
+    }
 }
 
 #[cfg(test)]
 mod eta_reduce_tests {
-    use super::*;
+    use crate::*;
 
     #[test]
     fn test_no_reduction_on_plain_var() {
