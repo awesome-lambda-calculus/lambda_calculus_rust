@@ -845,7 +845,7 @@ impl Term {
     /// Returns `true` if the term can be represented using only two distinct variable indices, i.e. `Var(1)` and `Var(2)`.
     pub fn two_vars_are_enough(&self) -> bool {
         match self {
-            Var(_) => true,
+            Var(i) => *i < 2,
             Abs(term) => match term.as_ref() {
                 Abs(term) => term.two_vars_are_enough(),
                 _ => false,
