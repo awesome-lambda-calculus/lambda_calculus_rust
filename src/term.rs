@@ -818,6 +818,20 @@ impl Term {
         }
     }
 
+    /// Returns `true` if all variables in the term are `Var(0)` or `Var(1)`
+    pub fn all01(&self) -> bool {
+        match self {
+            Var(0) => true,
+            Var(1) => true,
+            Var(_) => false,
+            Abs(term) => term.all01(),
+            App(boxed) => {
+                let (ref t1, ref t2) = **boxed;
+                t1.all01() && t2.all01()
+            }
+        }
+    }
+
     /// Returns `true` if no variable index occurs more than once in the term.
     pub fn no_duplicate(&self) -> bool {
         match self {
