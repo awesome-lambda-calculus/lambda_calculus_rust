@@ -6,6 +6,7 @@
 #[macro_use]
 pub mod term;
 pub mod combinators;
+pub mod named_term;
 pub mod parser;
 pub mod reduction;
 
