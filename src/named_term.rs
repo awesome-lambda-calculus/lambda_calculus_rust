@@ -51,40 +51,6 @@ impl std::fmt::Display for NamedTerm {
 
 use crate::Term;
 
-/// Attempts to convert a de Bruijn-indexed lambda term into an α-equivalent
-/// named representation using **only the variable names `x` and `y`**.
-///
-/// The conversion assigns either `x` or `y` to each lambda binder while
-/// preserving the binding structure of the original de Bruijn term.
-///
-/// Returns:
-///
-/// - `Some(named_term)` if a valid assignment of `x` and `y` exists.
-/// - `None` if no such assignment exists, or if the input contains an
-///   out-of-scope de Bruijn index.
-///
-/// # Examples
-///
-/// ```text
-/// λλλ0
-///     ↓
-/// λx. λy. λx. x
-/// ```
-///
-/// ```text
-/// λ(λ(λ1)01)0
-///     ↓
-/// λx. (λy. ((λx. y) y x)) x
-/// ```
-///
-/// # Note
-///
-/// The returned names are not unique. Multiple α-equivalent results may exist;
-/// this function returns one valid assignment.
-pub fn convert(term: &Term) -> Option<NamedTerm> {
-    convert_impl(term, &mut Vec::new())
-}
-
 fn convert_impl(term: &Term, stack: &mut Vec<Name>) -> Option<NamedTerm> {
     match term {
         Term::Var(i) => {
@@ -130,6 +96,42 @@ fn convert_impl(term: &Term, stack: &mut Vec<Name>) -> Option<NamedTerm> {
     }
 }
 
+impl Term {
+    /// Attempts to convert a de Bruijn-indexed lambda term into an α-equivalent
+    /// named representation using **only the variable names `x` and `y`**.
+    ///
+    /// The conversion assigns either `x` or `y` to each lambda binder while
+    /// preserving the binding structure of the original de Bruijn term.
+    ///
+    /// Returns:
+    ///
+    /// - `Some(named_term)` if a valid assignment of `x` and `y` exists.
+    /// - `None` if no such assignment exists, or if the input contains an
+    ///   out-of-scope de Bruijn index.
+    ///
+    /// # Examples
+    ///
+    /// ```text
+    /// λλλ0
+    ///     ↓
+    /// λx. λy. λx. x
+    /// ```
+    ///
+    /// ```text
+    /// λ(λ(λ1)01)0
+    ///     ↓
+    /// λx. (λy. ((λx. y) y x)) x
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// The returned names are not unique. Multiple α-equivalent results may exist;
+    /// this function returns one valid assignment.
+    pub fn convert(&self) -> Option<NamedTerm> {
+        convert_impl(self, &mut Vec::new())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,7 +156,7 @@ mod tests {
         let t = lam(var(0));
 
         assert_eq!(
-            convert(&t),
+            t.convert(),
             Some(NamedTerm::Lam(Name::X, Box::new(NamedTerm::Var(Name::X))))
         );
     }
@@ -165,7 +167,7 @@ mod tests {
         let t = lam(lam(var(1)));
 
         assert_eq!(
-            convert(&t),
+            t.convert(),
             Some(NamedTerm::Lam(
                 Name::X,
                 Box::new(NamedTerm::Lam(Name::Y, Box::new(NamedTerm::Var(Name::X))))
@@ -179,7 +181,7 @@ mod tests {
         let t = lam(lam(lam(var(0))));
 
         assert_eq!(
-            convert(&t),
+            t.convert(),
             Some(NamedTerm::Lam(
                 Name::X,
                 Box::new(NamedTerm::Lam(
@@ -195,7 +197,7 @@ mod tests {
         // λλλ1
         let t = lam(lam(lam(var(1))));
 
-        assert!(convert(&t).is_some());
+        assert!(t.convert().is_some());
     }
 
     #[test]
@@ -203,7 +205,7 @@ mod tests {
         // λλλ2
         let t = lam(lam(lam(var(2))));
 
-        assert!(convert(&t).is_some());
+        assert!(t.convert().is_some());
     }
 
     #[test]
@@ -211,7 +213,7 @@ mod tests {
         // λ(0 0)
         let t = lam(app(var(0), var(0)));
 
-        assert!(convert(&t).is_some());
+        assert!(t.convert().is_some());
     }
 
     #[test]
@@ -219,7 +221,7 @@ mod tests {
         // λλ(1 0)
         let t = lam(lam(app(var(1), var(0))));
 
-        assert!(convert(&t).is_some());
+        assert!(t.convert().is_some());
     }
 
     #[test]
@@ -227,7 +229,7 @@ mod tests {
         // λ1
         let t = lam(var(1));
 
-        assert!(convert(&t).is_none());
+        assert!(t.convert().is_none());
     }
 
     #[test]
@@ -235,7 +237,7 @@ mod tests {
         // λλ3
         let t = lam(lam(var(3)));
 
-        assert!(convert(&t).is_none());
+        assert!(t.convert().is_none());
     }
 
     #[test]
@@ -243,7 +245,7 @@ mod tests {
         // λ(λ(λ1)01)0
         let t = lam(app(lam(app(app(lam(var(1)), var(0)), var(1))), var(0)));
 
-        assert!(convert(&t).is_some());
+        assert!(t.convert().is_some());
     }
 
     #[test]
@@ -251,7 +253,7 @@ mod tests {
         // λλλ(2 2)
         let t = lam(lam(lam(app(var(2), var(2)))));
 
-        assert!(convert(&t).is_some());
+        assert!(t.convert().is_some());
     }
 
     #[test]
@@ -289,7 +291,7 @@ mod tests {
         ];
         for x in v {
             let t = parse(x, DeBruijn).unwrap();
-            assert!(convert(&t).is_some());
+            assert!(t.convert().is_some());
         }
     }
 
@@ -894,7 +896,7 @@ mod tests {
         ];
         for x in v {
             let t = parse(x, DeBruijn).unwrap();
-            assert!(convert(&t).is_some());
+            assert!(t.convert().is_some());
         }
     }
 }
