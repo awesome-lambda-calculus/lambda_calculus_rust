@@ -49,35 +49,6 @@ impl std::fmt::Display for NamedTerm {
     }
 }
 
-/// Returns `true` if the given `name` occurs free in `term`.
-///
-/// A variable occurrence is "free" when it is not bound by an enclosing
-/// `Lam` with the same name. For example, `x` is free in `x`, but not free
-/// in `λx. x` (where the binder shadows the occurrence). The function recurses
-/// into both sides of an application and into the body of a `Lam` unless the
-/// binder shadows the queried name.
-///
-/// # Examples
-///
-/// - `is_free(&NamedTerm::Var(Name::X), Name::X)` returns `true`.
-/// - `is_free(&NamedTerm::Lam(Name::X, Box::new(NamedTerm::Var(Name::X))), Name::X)`
-///   returns `false`.
-pub fn is_free(term: &NamedTerm, name: Name) -> bool {
-    match term {
-        NamedTerm::Var(v) => *v == name,
-
-        NamedTerm::App(l, r) => is_free(l, name) || is_free(r, name),
-
-        NamedTerm::Lam(v, body) => {
-            if *v == name {
-                false
-            } else {
-                is_free(body, name)
-            }
-        }
-    }
-}
-
 fn k() -> NamedTerm {
     NamedTerm::Lam(
         Name::X,
@@ -85,60 +56,88 @@ fn k() -> NamedTerm {
     )
 }
 
-/// x+ = x
-/// y+ = y
-/// (XY )+ = (X + Y +)
-/// (λx.X)+ = (λyx.X+)y if y is free in X
-/// (λyx.X+)K if y is not free in X
-/// (λy.X)+ = (λxy.X+)x if x is free in X
-/// (λxy.X+)K if x is not free in X
-pub fn plus(term: &NamedTerm) -> NamedTerm {
-    match term {
-        NamedTerm::Var(x) => NamedTerm::Var(*x),
-
-        NamedTerm::App(m, n) => NamedTerm::App(Box::new(plus(m)), Box::new(plus(n))),
-
-        NamedTerm::Lam(Name::X, body) => {
-            if is_free(&body, Name::Y) {
-                // (λyx.X+) y
-                NamedTerm::App(
-                    Box::new(NamedTerm::Lam(
-                        Name::Y,
-                        Box::new(NamedTerm::Lam(Name::X, Box::new(plus(body)))),
-                    )),
-                    Box::new(NamedTerm::Var(Name::Y)),
-                )
-            } else {
-                // (λyx.X+) K
-                NamedTerm::App(
-                    Box::new(NamedTerm::Lam(
-                        Name::Y,
-                        Box::new(NamedTerm::Lam(Name::X, Box::new(plus(body)))),
-                    )),
-                    Box::new(k()),
-                )
+impl NamedTerm {
+    /// Returns `true` if the given `name` occurs free in `term`.
+    ///
+    /// A variable occurrence is "free" when it is not bound by an enclosing
+    /// `Lam` with the same name. For example, `x` is free in `x`, but not free
+    /// in `λx. x` (where the binder shadows the occurrence). The function recurses
+    /// into both sides of an application and into the body of a `Lam` unless the
+    /// binder shadows the queried name.
+    ///
+    /// # Examples
+    ///
+    /// - `is_free(&NamedTerm::Var(Name::X), Name::X)` returns `true`.
+    /// - `is_free(&NamedTerm::Lam(Name::X, Box::new(NamedTerm::Var(Name::X))), Name::X)` returns `false`.
+    pub fn is_free(&self, name: Name) -> bool {
+        match self {
+            NamedTerm::Var(v) => *v == name,
+            NamedTerm::App(l, r) => l.is_free(name) || r.is_free(name),
+            NamedTerm::Lam(v, body) => {
+                if *v == name {
+                    false
+                } else {
+                    body.is_free(name)
+                }
             }
         }
+    }
 
-        NamedTerm::Lam(Name::Y, body) => {
-            if is_free(&body, Name::X) {
-                // (λxy.X+) x
-                NamedTerm::App(
-                    Box::new(NamedTerm::Lam(
-                        Name::X,
-                        Box::new(NamedTerm::Lam(Name::Y, Box::new(plus(body)))),
-                    )),
-                    Box::new(NamedTerm::Var(Name::X)),
-                )
-            } else {
-                // (λxy.X+) K
-                NamedTerm::App(
-                    Box::new(NamedTerm::Lam(
-                        Name::X,
-                        Box::new(NamedTerm::Lam(Name::Y, Box::new(plus(body)))),
-                    )),
-                    Box::new(k()),
-                )
+    /// x+ = x
+    /// y+ = y
+    /// (XY )+ = (X + Y +)
+    /// (λx.X)+ = (λyx.X+)y if y is free in X
+    /// (λyx.X+)K if y is not free in X
+    /// (λy.X)+ = (λxy.X+)x if x is free in X
+    /// (λxy.X+)K if x is not free in X
+    pub fn plus(&self) -> NamedTerm {
+        match self {
+            NamedTerm::Var(x) => NamedTerm::Var(*x),
+
+            NamedTerm::App(m, n) => NamedTerm::App(Box::new(m.plus()), Box::new(n.plus())),
+
+            NamedTerm::Lam(Name::X, body) => {
+                if body.is_free(Name::Y) {
+                    // (λyx.X+) y
+                    NamedTerm::App(
+                        Box::new(NamedTerm::Lam(
+                            Name::Y,
+                            Box::new(NamedTerm::Lam(Name::X, Box::new(body.plus()))),
+                        )),
+                        Box::new(NamedTerm::Var(Name::Y)),
+                    )
+                } else {
+                    // (λyx.X+) K
+                    NamedTerm::App(
+                        Box::new(NamedTerm::Lam(
+                            Name::Y,
+                            Box::new(NamedTerm::Lam(Name::X, Box::new(body.plus()))),
+                        )),
+                        Box::new(k()),
+                    )
+                }
+            }
+
+            NamedTerm::Lam(Name::Y, body) => {
+                if body.is_free(Name::X) {
+                    // (λxy.X+) x
+                    NamedTerm::App(
+                        Box::new(NamedTerm::Lam(
+                            Name::X,
+                            Box::new(NamedTerm::Lam(Name::Y, Box::new(body.plus()))),
+                        )),
+                        Box::new(NamedTerm::Var(Name::X)),
+                    )
+                } else {
+                    // (λxy.X+) K
+                    NamedTerm::App(
+                        Box::new(NamedTerm::Lam(
+                            Name::X,
+                            Box::new(NamedTerm::Lam(Name::Y, Box::new(body.plus()))),
+                        )),
+                        Box::new(k()),
+                    )
+                }
             }
         }
     }
